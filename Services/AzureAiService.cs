@@ -124,13 +124,13 @@ namespace backend.Services
 
             Analyze their LATEST diary entry: '{currentLog}'
 
-            Return a JSON object strictly in this format:
+            Return a JSON object strictly in this format. NEVER use null for MoodScore, StressLevel, or EnergyLevel. You must estimate a score from 1 to 10 based on the context of their text (e.g., a broken ankle means high stress and low mood). Default to 5 if it is completely neutral.
             {{
-              ""MoodScore"": 5, //Extract 1-10 scale if mentioned. If mood score is not relavant, use null
-              ""StressLevel"": 5, //Extract 1-10 scale if mentioned. If stress level is not relevant, use null
-              ""EnergyLevel"": 8, // Extract 1-10 scale if mentioned. If energy is not mentioned, use null.
+              ""MoodScore"": 3, // Estimate 1-10 (1 = miserable, 10 = fantastic). 
+              ""StressLevel"": 8, // Estimate 1-10 (1 = totally relaxed, 10 = severe panic/pain).
+              ""EnergyLevel"": 4, // Estimate 1-10 (1 = exhausted, 10 = highly energetic).
               ""Category"": ""Symptom"", // Choose strictly one: Symptom, Diet, General, Mood
-              ""TrendWarning"": ""null"", // If history shows multiple days of unhealthy habits (high sugar, excessive caffeine, prolonged symptoms), write a strict but friendly warning here. Otherwise, use null.
+              ""TrendWarning"": ""null"", // If history shows multiple days of unhealthy habits or severe pain, write a strict warning here. Otherwise, use the string ""null"".
               ""AiPatientFeedback"": ""A brief, empathetic response validating their feelings.""
             }}";
             return await GetOpenAiResponseAsync(prompt);
