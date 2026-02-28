@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.IO;
+using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using System.ClientModel;
 using Azure.AI.OpenAI;
@@ -35,19 +37,62 @@ namespace backend.Services
             }
         }
 
-        public async Task<string> TranscribeAudioAsync(string audioFilePath)
+        public async Task<string> TranscribeAudioAsync(string originalFilePath)
         {
             if (_useMockAi) return "This is a mocked audio transcription for testing.";
 
-            var speechConfig = SpeechConfig.FromSubscription(_speechKey, _speechRegion);
-            speechConfig.SpeechRecognitionLanguage = "en-US";
+            // 1. Convert the input file to 16kHz PCM WAV via FFmpeg
+            string perfectWavPath = await ConvertToWavAsync(originalFilePath);
 
-            using var audioConfig = AudioConfig.FromWavFileInput(audioFilePath);
-            using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+            try
+            {
+                var speechConfig = SpeechConfig.FromSubscription(_speechKey, _speechRegion);
+                speechConfig.SpeechRecognitionLanguage = "en-US";
 
-            var result = await recognizer.RecognizeOnceAsync();
+                // 2. Pass the perfect WAV to Azure
+                using var audioConfig = AudioConfig.FromWavFileInput(perfectWavPath);
+                using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
 
-            return result.Reason == ResultReason.RecognizedSpeech ? result.Text : $"Speech recognition failed: {result.Reason}";
+                var result = await recognizer.RecognizeOnceAsync();
+
+                return result.Reason == ResultReason.RecognizedSpeech ? result.Text : $"Speech recognition failed: {result.Reason}";
+            }
+            finally
+            {
+                // 3. Clean up the converted file to save server storage
+                if (File.Exists(perfectWavPath))
+                {
+                    File.Delete(perfectWavPath);
+                }
+            }
+        }
+
+        private async Task<string> ConvertToWavAsync(string inputPath)
+        {
+            var outputPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_converted.wav");
+
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = $"-y -i \"{inputPath}\" -acodec pcm_s16le -ar 16000 -ac 1 \"{outputPath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+
+            process.Start();
+            await process.WaitForExitAsync();
+
+            if (!File.Exists(outputPath))
+            {
+                throw new Exception("Backend Audio Converter Failed. Ensure FFmpeg is installed.");
+            }
+
+            return outputPath;
         }
 
         public async Task<string> GenerateSoapAndPatientSummaryAsync(string doctorDictation)
@@ -55,15 +100,15 @@ namespace backend.Services
             if (_useMockAi) return @"{ ""SoapSubjective"": ""Patient reports headache."", ""SoapObjective"": ""Vitals normal."", ""SoapAssessment"": ""Tension headache."", ""SoapPlan"": ""Rest and hydration."", ""PatientFriendlyExplanation"": ""Make sure to get some rest and drink plenty of water."" }";
 
             var prompt = $@"
-You are a medical AI assistant. Analyze the following doctor's dictation: '{doctorDictation}'
-Output a JSON object strictly in this format:
-{{
-  ""SoapSubjective"": ""..."",
-  ""SoapObjective"": ""..."",
-  ""SoapAssessment"": ""..."",
-  ""SoapPlan"": ""..."",
-  ""PatientFriendlyExplanation"": ""Write a warm, empathetic 2-sentence summary for the patient at a 5th-grade reading level.""
-}}";
+            You are a medical AI assistant. Analyze the following doctor's dictation: '{doctorDictation}'
+            Output a JSON object strictly in this format:
+            {{
+              ""SoapSubjective"": ""..."",
+              ""SoapObjective"": ""..."",
+              ""SoapAssessment"": ""..."",
+              ""SoapPlan"": ""..."",
+              ""PatientFriendlyExplanation"": ""Write a warm, empathetic 2-sentence summary for the patient at a 5th-grade reading level.""
+            }}";
             return await GetOpenAiResponseAsync(prompt);
         }
 

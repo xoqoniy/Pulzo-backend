@@ -26,5 +26,13 @@ RUN dotnet publish "./backend.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p
 # This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
+# NEW: Install FFmpeg in the Linux container
+RUN apt-get update && apt-get install -y ffmpeg
+
+COPY --from=build /app/publish .
+
+# Expose the port Render uses
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+
 ENTRYPOINT ["dotnet", "backend.dll"]
