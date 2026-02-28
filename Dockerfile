@@ -38,7 +38,7 @@ RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-USER 64198
+USER app
 
 WORKDIR /app
 COPY --from=publish /app/publish .
